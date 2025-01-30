@@ -42,10 +42,10 @@ impl TcpSocket {
     pub fn connected(&self) -> bool {
         let mut buf = [0; 1]; // A small buffer
         match self.stream.peek(&mut buf) {
-            Ok(0) => true,                                        // Connection closed by peer
-            Ok(_) => false,                                       // Data available, still connected
-            Err(e) if e.kind() == ErrorKind::WouldBlock => false, // Would block means it's still open
-            Err(_) => true, // Any other error means it's disconnected
+            Ok(0) => false,                                      // Connection closed by peer
+            Ok(_) => true,                                       // Data available, still connected
+            Err(e) if e.kind() == ErrorKind::WouldBlock => true, // Would block means it's still open
+            Err(_) => false, // Any other error means it's disconnected
         }
     }
 }

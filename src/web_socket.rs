@@ -12,18 +12,27 @@ pub(crate) mod js_web_socket {
 
     extern "C" {
         fn ws_connect(addr: JsObject);
-        fn ws_send(buffer: JsObject);
+        fn ws_send(buffer: JsObject) -> JsObject;
+        fn ws_close();
         fn ws_try_recv() -> JsObject;
         fn ws_is_connected() -> i32;
     }
 
     impl WebSocket {
-        pub fn send_text(&self, text: &str) {
-            unsafe { ws_send(JsObject::string(text)) };
-        }
+        pub fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
+            let error_obj: JsObject = unsafe { ws_send(JsObject::buffer(data)) };
 
-        pub fn send_bytes(&self, data: &[u8]) {
-            unsafe { ws_send(JsObject::buffer(data)) };
+            if error_obj.is_undefined() {
+                Ok(())
+            } else {
+                let mut error_message = String::new();
+                error_obj.to_string(&mut error_message);
+
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    error_message,
+                ))
+            }
         }
 
         pub fn try_recv(&mut self) -> Option<Vec<u8>> {
@@ -51,6 +60,13 @@ pub(crate) mod js_web_socket {
             unsafe { ws_connect(JsObject::string(&format!("{}", addr))) };
 
             Ok(WebSocket)
+        }
+
+        pub fn close(&self) -> Result<(), std::io::Error> {
+            unsafe {
+                ws_close();
+            }
+            Ok(()) // TODO can websockets fail to close?
         }
     }
 }

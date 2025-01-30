@@ -5,13 +5,14 @@ register_plugin = function (importObject) {
     importObject.env.ws_connect = ws_connect;
     importObject.env.ws_is_connected = ws_is_connected;
     importObject.env.ws_send = ws_send;
+    importObject.env.ws_close = ws_close;
     importObject.env.ws_try_recv = ws_try_recv;
 
     importObject.env.http_make_request = http_make_request;
     importObject.env.http_try_recv = http_try_recv;
 }
 
-miniquad_add_plugin({ register_plugin, on_init, version: 1, name: "quad_net" });
+miniquad_add_plugin({register_plugin, on_init, version: 1, name: "quad_net"});
 
 var quad_socket;
 var connected = 0;
@@ -24,11 +25,11 @@ function ws_is_connected() {
 function ws_connect(addr) {
     quad_socket = new WebSocket(consume_js_object(addr));
     quad_socket.binaryType = 'arraybuffer';
-    quad_socket.onopen = function() {
+    quad_socket.onopen = function () {
         connected = 1;
     };
 
-    quad_socket.onmessage = function(msg) {
+    quad_socket.onmessage = function (msg) {
         if (typeof msg.data == "string") {
             received_buffer.push({
                 "text": 1,
@@ -41,17 +42,34 @@ function ws_connect(addr) {
                 "data": buffer
             });
         }
+    };
 
-    }
+    quad_socket.onclose = function () {
+        connected = 0;
+    };
+};
+
+function ws_close() {
+    quad_socket.close();
 };
 
 function ws_send(data) {
-    var array = consume_js_object(data);
-    // here should be a nice typecheck on array.is_string or whatever
-    if (array.buffer != undefined) {
-        quad_socket.send(array.buffer);
-    } else {
-        quad_socket.send(array);
+    try {
+        var array = consume_js_object(data);
+        // here should be a nice typecheck on array.is_string or whatever
+        if (array.buffer != undefined) {
+            quad_socket.send(array.buffer);
+        } else {
+            quad_socket.send(array);
+        }
+        return js_object(undefined);// No error
+    } catch (error) {
+        console.error("Error sending data: " + error);  // Convert error to string and log
+
+        var error_message = error.message;
+        var error_obj = js_object(error_message);
+
+        return error_obj;
     }
 };
 
@@ -105,7 +123,7 @@ function http_make_request(scheme, url, body, headers) {
     xhr.onload = function (e) {
         if (this.status == 200) {
             var uInt8Array = new Uint8Array(this.response);
-            
+
             ongoing_requests[cid] = uInt8Array;
         }
     }

@@ -15,15 +15,27 @@ pub struct QuadSocket {
 }
 
 impl QuadSocket {
-    pub fn send(&mut self, data: &[u8]) {
+    pub fn send(&mut self, data: &[u8]) -> Result<(), std::io::Error> {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            self.tcp_socket.send(data);
+            self.tcp_socket.send(data)
         }
 
         #[cfg(target_arch = "wasm32")]
         {
-            self.web_socket.send_bytes(data);
+            self.web_socket.send_bytes(data)
+        }
+    }
+
+    pub fn close(&mut self) -> Result<(), std::io::Error> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.tcp_socket.close()
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.web_socket.close()
         }
     }
 
@@ -38,21 +50,17 @@ impl QuadSocket {
             self.web_socket.try_recv()
         }
     }
-}
 
-#[cfg(feature = "nanoserde")]
-impl QuadSocket {
-    pub fn send_bin<T: nanoserde::SerBin>(&mut self, data: &T) {
-        use nanoserde::SerBin;
+    pub fn connected(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.tcp_socket.connected()
+        }
 
-        self.send(&SerBin::serialize_bin(data));
-    }
-
-    pub fn try_recv_bin<T: nanoserde::DeBin + std::fmt::Debug>(&mut self) -> Option<T> {
-        let bytes = self.try_recv()?;
-        let data: T = nanoserde::DeBin::deserialize_bin(&bytes).expect("Cant parse message");
-
-        Some(data)
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.web_socket.connected()
+        }
     }
 }
 

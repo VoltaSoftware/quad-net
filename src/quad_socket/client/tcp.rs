@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::net::ToSocketAddrs;
 
 use std::net::TcpStream;
@@ -12,15 +12,41 @@ pub struct TcpSocket {
 }
 
 impl TcpSocket {
-    pub fn send(&mut self, data: &[u8]) {
+    pub fn send(&mut self, data: &[u8]) -> Result<(), std::io::Error> {
         use std::io::Write;
 
-        self.stream.write_all(&(data.len() as u32).to_be_bytes()).unwrap();
-        self.stream.write_all(data).unwrap();
+        self.stream.write_all(&(data.len() as u32).to_be_bytes())?;
+        self.stream.write_all(data)
     }
 
     pub fn try_recv(&mut self) -> Option<Vec<u8>> {
+        /*        match self.rx.try_recv() {
+            Ok(data) => Some(data),
+            Err(error) => {
+                if error == TryRecvError::Empty {
+                    None
+                } else {
+                    // If the receiver is disconnected, we should close the socket
+                    self.close();
+                    None
+                }
+            }
+        }*/
         self.rx.try_recv().ok()
+    }
+
+    pub fn close(&self) -> Result<(), std::io::Error> {
+        self.stream.shutdown(std::net::Shutdown::Both)
+    }
+
+    pub fn connected(&self) -> bool {
+        let mut buf = [0; 1]; // A small buffer
+        match self.stream.peek(&mut buf) {
+            Ok(0) => true,                                        // Connection closed by peer
+            Ok(_) => false,                                       // Data available, still connected
+            Err(e) if e.kind() == ErrorKind::WouldBlock => false, // Would block means it's still open
+            Err(_) => true, // Any other error means it's disconnected
+        }
     }
 }
 
@@ -33,12 +59,16 @@ impl TcpSocket {
         let (tx, rx) = mpsc::channel();
 
         std::thread::spawn({
-            let mut stream = stream.try_clone().unwrap();
+            let mut stream = stream.try_clone().expect("Failed to clone tcp stream");
             move || {
                 let mut messages = MessageReader::new();
                 loop {
                     if let Ok(Some(message)) = messages.next(&mut stream) {
-                        tx.send(message).unwrap();
+                        if tx.send(message).is_err() {
+                            // This only happens if the channel is disconnected.
+                            let _ = stream.shutdown(std::net::Shutdown::Both);
+                            break;
+                        }
                     }
                 }
             }

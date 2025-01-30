@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::net::ToSocketAddrs;
 
 use std::net::TcpStream;
@@ -14,8 +15,8 @@ impl TcpSocket {
     pub fn send(&mut self, data: &[u8]) {
         use std::io::Write;
 
-        self.stream.write(&[data.len() as u8]).unwrap();
-        self.stream.write(data).unwrap();
+        self.stream.write_all(&(data.len() as u32).to_be_bytes()).unwrap();
+        self.stream.write_all(data).unwrap();
     }
 
     pub fn try_recv(&mut self) -> Option<Vec<u8>> {
@@ -26,7 +27,8 @@ impl TcpSocket {
 impl TcpSocket {
     pub fn connect<A: ToSocketAddrs>(addr: A) -> Result<TcpSocket, Error> {
         let stream = TcpStream::connect(addr)?;
-        stream.set_nodelay(true).unwrap();
+        stream.set_nodelay(true)?;
+        stream.set_nonblocking(true)?; // TODO do we need this?
 
         let (tx, rx) = mpsc::channel();
 

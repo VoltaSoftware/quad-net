@@ -64,7 +64,7 @@ function ws_send(data) {
         }
         return js_object(undefined);// No error
     } catch (error) {
-        console.error("Error sending data: " + error);  // Convert error to string and log
+        console.error("Error sending data: ", error);  // Convert error to string and log
 
         var error_message = error.message;
         var error_obj = js_object(error_message);

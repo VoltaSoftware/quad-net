@@ -11,3 +11,5 @@ ureq = "2.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 sapp-jsutils = "0.1"
+[dependencies]
+log = "0.4.25"

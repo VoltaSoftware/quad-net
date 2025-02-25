@@ -53,7 +53,7 @@ impl TcpSocket {
 impl TcpSocket {
     pub fn connect<A: ToSocketAddrs>(addr: A) -> Result<TcpSocket, Error> {
         let stream = TcpStream::connect(addr)?;
-        stream.set_nodelay(true)?;
+        //stream.set_nodelay(true)?;
         stream.set_nonblocking(true)?; // TODO do we need this?
 
         let (tx, rx) = mpsc::channel();

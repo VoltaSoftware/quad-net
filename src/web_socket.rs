@@ -56,8 +56,8 @@ pub(crate) mod js_web_socket {
             unsafe { ws_is_connected() == 1 }
         }
 
-        pub fn connect(addr: SocketAddr) -> Result<WebSocket, Error> {
-            unsafe { ws_connect(JsObject::string(&format!("ws://{}", addr))) };
+        pub fn connect<A: ToSocketAddrs + std::fmt::Display>(addr: A) -> Result<WebSocket, Error> {
+            unsafe { ws_connect(JsObject::string(&format!("{}", addr))) };
 
             Ok(WebSocket)
         }

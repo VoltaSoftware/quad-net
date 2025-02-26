@@ -51,8 +51,8 @@ impl TcpSocket {
 }
 
 impl TcpSocket {
-    pub fn connect(addr: SocketAddr) -> Result<TcpSocket, Error> {
-        let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5))?;
+    pub fn connect<A: ToSocketAddrs>(addr: A) -> Result<TcpSocket, Error> {
+        let stream = TcpStream::connect(addr)?;
         //stream.set_nodelay(true)?;
         stream.set_nonblocking(true)?; // TODO do we need this?
 

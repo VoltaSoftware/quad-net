@@ -2,7 +2,7 @@
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod js_web_socket {
-    use std::net::ToSocketAddrs;
+    use std::net::{SocketAddr, ToSocketAddrs};
 
     use sapp_jsutils::JsObject;
 
@@ -56,8 +56,8 @@ pub(crate) mod js_web_socket {
             unsafe { ws_is_connected() == 1 }
         }
 
-        pub fn connect<A: ToSocketAddrs + std::fmt::Display>(addr: A) -> Result<WebSocket, Error> {
-            unsafe { ws_connect(JsObject::string(&format!("{}", addr))) };
+        pub fn connect(addr: SocketAddr) -> Result<WebSocket, Error> {
+            unsafe { ws_connect(JsObject::string(&format!("ws://{}", addr))) };
 
             Ok(WebSocket)
         }

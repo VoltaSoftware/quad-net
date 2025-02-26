@@ -48,12 +48,12 @@ extern "C" {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub struct Request {
-    rx: std::sync::mpsc::Receiver<Result<String, HttpError>>,
+    rx: std::sync::mpsc::Receiver<Result<ResponsePayload, HttpError>>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Request {
-    pub fn try_recv(&mut self) -> Option<Result<String, HttpError>> {
+    pub fn try_recv(&mut self) -> Option<Result<ResponsePayload, HttpError>> {
         self.rx.try_recv().ok()
     }
 }
@@ -61,23 +61,42 @@ impl Request {
 #[cfg(target_arch = "wasm32")]
 pub struct Request {
     cid: i32,
+    response_type: RequestResponseType,
 }
 
 #[cfg(target_arch = "wasm32")]
 impl Request {
-    pub fn try_recv(&mut self) -> Option<Result<String, HttpError>> {
+    pub fn try_recv(&mut self) -> Option<Result<ResponsePayload, HttpError>> {
         let js_obj = unsafe { http_try_recv(self.cid) };
 
         if js_obj.is_nil() == false {
             let mut buf = vec![];
             js_obj.to_byte_buffer(&mut buf);
 
-            let res = std::str::from_utf8(&buf).unwrap().to_owned();
-            return Some(Ok(res));
+            let payload = match self.response_type {
+                RequestResponseType::Text => {
+                    let res = std::str::from_utf8(&buf).unwrap().to_owned();
+                    ResponsePayload::Text(res)
+                }
+                RequestResponseType::Bytes => ResponsePayload::Bytes(buf),
+            };
+
+            return Some(Ok(payload));
         }
 
         None
     }
+}
+
+pub enum ResponsePayload {
+    Text(String),
+    Bytes(Vec<u8>),
+}
+
+#[derive(Copy, Clone)]
+pub enum RequestResponseType {
+    Text,
+    Bytes,
 }
 
 pub struct RequestBuilder {
@@ -85,6 +104,7 @@ pub struct RequestBuilder {
     method: Method,
     headers: Vec<(String, String)>,
     body: Option<String>,
+    response_type: RequestResponseType,
 }
 
 impl RequestBuilder {
@@ -94,6 +114,7 @@ impl RequestBuilder {
             method: Method::Get,
             headers: vec![],
             body: None,
+            response_type: RequestResponseType::Text,
         }
     }
 
@@ -117,6 +138,13 @@ impl RequestBuilder {
         }
     }
 
+    pub fn response_type(self, response_type: RequestResponseType) -> RequestBuilder {
+        RequestBuilder {
+            response_type,
+            ..self
+        }
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn send(self) -> Request {
         use std::sync::mpsc::channel;
@@ -135,17 +163,28 @@ impl RequestBuilder {
             for (header, value) in self.headers {
                 request = request.set(&header, &value)
             }
-            let response: Result<String, HttpError> = if let Some(body) = self.body {
+            let response: Result<ResponsePayload, HttpError> = if let Some(body) = self.body {
                 request.send_string(&body)
             } else {
                 request.call()
             }
             .map_err(|err| err.into())
-            .and_then(|response| response.into_string().map_err(|err| err.into()));
+            .and_then(|response| match self.response_type {
+                RequestResponseType::Text => response
+                    .into_string()
+                    .map(|s| ResponsePayload::Text(s))
+                    .map_err(|err| err.into()),
+                RequestResponseType::Bytes => {
+                    let mut bytes = Vec::new();
+                    match response.into_reader().read_to_end(&mut bytes) {
+                        Ok(_) => Ok(ResponsePayload::Bytes(bytes)),
+                        Err(err) => Err(err.into()),
+                    }
+                }
+            });
 
             tx.send(response).unwrap();
         });
-
         Request { rx }
     }
 
@@ -172,6 +211,9 @@ impl RequestBuilder {
                 headers,
             )
         };
-        Request { cid }
+        Request {
+            cid,
+            response_type: self.response_type,
+        }
     }
 }

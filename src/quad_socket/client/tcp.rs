@@ -1,10 +1,10 @@
 use std::io::{ErrorKind, Write};
-use std::net::ToSocketAddrs;
-
-use std::net::TcpStream;
-use std::sync::mpsc::{self, Receiver};
+use std::net::{SocketAddr, ToSocketAddrs};
 
 use crate::{error::Error, quad_socket::protocol::MessageReader};
+use std::net::TcpStream;
+use std::sync::mpsc::{self, Receiver};
+use std::time::Duration;
 
 pub struct TcpSocket {
     stream: TcpStream,
@@ -51,8 +51,8 @@ impl TcpSocket {
 }
 
 impl TcpSocket {
-    pub fn connect<A: ToSocketAddrs>(addr: A) -> Result<TcpSocket, Error> {
-        let stream = TcpStream::connect(addr)?;
+    pub fn connect(addr: SocketAddr) -> Result<TcpSocket, Error> {
+        let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5))?;
         //stream.set_nodelay(true)?;
         stream.set_nonblocking(true)?; // TODO do we need this?
 

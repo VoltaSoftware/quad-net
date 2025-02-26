@@ -1,4 +1,4 @@
-use std::net::ToSocketAddrs;
+use std::net::{SocketAddr, ToSocketAddrs};
 
 #[cfg(not(target_arch = "wasm32"))]
 mod tcp;
@@ -70,7 +70,7 @@ impl QuadSocket {
         self.web_socket.connected()
     }
 
-    pub fn connect<A: ToSocketAddrs + std::fmt::Display>(addr: A) -> Result<QuadSocket, Error> {
+    pub fn connect(addr: SocketAddr) -> Result<QuadSocket, Error> {
         Ok(QuadSocket {
             #[cfg(not(target_arch = "wasm32"))]
             tcp_socket: tcp::TcpSocket::connect(addr)?,

@@ -1,7 +1,7 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 
 #[cfg(not(target_arch = "wasm32"))]
-mod tcp;
+mod websocket;
 #[cfg(target_arch = "wasm32")]
 use crate::web_socket::js_web_socket as websocket;
 
@@ -9,7 +9,7 @@ use crate::error::Error;
 
 pub struct QuadSocket {
     #[cfg(not(target_arch = "wasm32"))]
-    tcp_socket: tcp::TcpSocket,
+    tcp_socket: websocket::WebSocket,
     #[cfg(target_arch = "wasm32")]
     web_socket: websocket::WebSocket,
 }
@@ -70,10 +70,10 @@ impl QuadSocket {
         self.web_socket.connected()
     }
 
-    pub fn connect<A: ToSocketAddrs + std::fmt::Display>(addr: A) -> Result<QuadSocket, Error> {
+    pub fn connect(addr: &str) -> Result<QuadSocket, Error> {
         Ok(QuadSocket {
             #[cfg(not(target_arch = "wasm32"))]
-            tcp_socket: tcp::TcpSocket::connect(addr)?,
+            tcp_socket: websocket::WebSocket::connect(addr)?,
             #[cfg(target_arch = "wasm32")]
             web_socket: websocket::WebSocket::connect(addr)?,
         })

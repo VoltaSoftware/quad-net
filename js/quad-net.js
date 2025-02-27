@@ -3,7 +3,6 @@ function on_init() {
 
 register_plugin = function (importObject) {
     importObject.env.ws_connect = ws_connect;
-    importObject.env.ws_is_connected = ws_is_connected;
     importObject.env.ws_send = ws_send;
     importObject.env.ws_close = ws_close;
     importObject.env.ws_try_recv = ws_try_recv;
@@ -15,77 +14,93 @@ register_plugin = function (importObject) {
 miniquad_add_plugin({register_plugin, on_init, version: 1, name: "quad_net"});
 
 var quad_socket;
-var connected = 0;
 var received_buffer = [];
 
-function ws_is_connected() {
-    return connected;
-}
+const Connected = 0;
+const PackedReceived = 1;
+const SocketError = 2;
+const Closed = 3;
 
-function ws_connect(addr) {
-    quad_socket = new WebSocket(consume_js_object(addr));
+function ws_connect(a) {
+    received_buffer = [];
+
+    let addr = consume_js_object(a);
+    console.error("Connection to", addr);
+
+    quad_socket = new WebSocket(addr);
     quad_socket.binaryType = 'arraybuffer';
     quad_socket.onopen = function () {
-        connected = 1;
+        received_buffer.push({
+            "type": Connected,
+        });
     };
 
     quad_socket.onmessage = function (msg) {
         if (typeof msg.data == "string") {
-            received_buffer.push({
-                "text": 1,
-                "data": msg.data
-            });
+            console.error("Received string data: ", msg.data);
         } else {
-            var buffer = new Uint8Array(msg.data);
+            const buffer = new Uint8Array(msg.data);
             received_buffer.push({
-                "text": 0,
+                "type": PackedReceived,
                 "data": buffer
             });
         }
     };
 
-    quad_socket.onclose = function () {
-        connected = 0;
+    quad_socket.onerror = function (error) {
+        console.error("Websocket error:", error);
+        received_buffer.push({
+            "type": SocketError,
+            "data": JSON.stringify(error)
+        });
     };
-};
+
+    quad_socket.onclose = function () {
+        received_buffer.push({
+            "type": Closed,
+        });
+    };
+}
 
 function ws_close() {
+    console.error("Closing websocket connection by request");
     quad_socket.close();
-};
+}
 
 function ws_send(data) {
     try {
-        var array = consume_js_object(data);
+        const array = consume_js_object(data);
         // here should be a nice typecheck on array.is_string or whatever
-        if (array.buffer != undefined) {
+        if (array.buffer !== undefined) {
             quad_socket.send(array.buffer);
         } else {
             quad_socket.send(array);
         }
-        return js_object(undefined);// No error
     } catch (error) {
         console.error("Error sending data: ", error);  // Convert error to string and log
 
-        var error_message = error.message;
-        var error_obj = js_object(error_message);
+        const error_message = error.message;
 
-        return error_obj;
+        received_buffer.push({
+            "type": SocketError,
+            "data": JSON.stringify(error_message)
+        });
     }
-};
+}
 
 function ws_try_recv() {
-    if (received_buffer.length != 0) {
+    if (received_buffer.length !== 0) {
         return js_object(received_buffer.shift())
     }
     return -1;
 }
 
 
-var uid = 0;
-var ongoing_requests = {};
+let uid = 0;
+const ongoing_requests = {};
 
 function http_try_recv(cid) {
-    if (ongoing_requests[cid] != undefined && ongoing_requests[cid] != null) {
+    if (ongoing_requests[cid] !== undefined && ongoing_requests[cid] != null) {
         var data = ongoing_requests[cid];
         ongoing_requests[cid] = null;
         return js_object(data);
@@ -94,21 +109,21 @@ function http_try_recv(cid) {
 }
 
 function http_make_request(scheme, url, body, headers) {
-    var cid = uid;
+    const cid = uid;
 
     uid += 1;
 
-    var scheme_string;
-    if (scheme == 0) {
+    let scheme_string;
+    if (scheme === 0) {
         scheme_string = 'POST';
     }
-    if (scheme == 1) {
+    if (scheme === 1) {
         scheme_string = 'PUT';
     }
-    if (scheme == 2) {
+    if (scheme === 2) {
         scheme_string = 'GET';
     }
-    if (scheme == 3) {
+    if (scheme === 3) {
         scheme_string = 'DELETE';
     }
     var url_string = consume_js_object(url);
@@ -121,10 +136,8 @@ function http_make_request(scheme, url, body, headers) {
         xhr.setRequestHeader(header, headers_obj[header]);
     }
     xhr.onload = function (e) {
-        if (this.status == 200) {
-            var uInt8Array = new Uint8Array(this.response);
-
-            ongoing_requests[cid] = uInt8Array;
+        if (this.status === 200) {
+            ongoing_requests[cid] = new Uint8Array(this.response);
         }
     }
     xhr.onerror = function (e) {

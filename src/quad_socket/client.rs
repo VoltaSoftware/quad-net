@@ -1,4 +1,4 @@
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::ToSocketAddrs;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod websocket;
@@ -15,7 +15,7 @@ pub struct QuadSocket {
 }
 
 impl QuadSocket {
-    pub fn send(&mut self, data: &[u8]) -> Result<(), std::io::Error> {
+    pub fn send(&mut self, data: &[u8]) {
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.tcp_socket.send(data)
@@ -27,7 +27,7 @@ impl QuadSocket {
         }
     }
 
-    pub fn close(&mut self) -> Result<(), std::io::Error> {
+    pub fn close(&mut self) {
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.tcp_socket.close()
@@ -39,7 +39,7 @@ impl QuadSocket {
         }
     }
 
-    pub fn try_recv(&mut self) -> Option<Vec<u8>> {
+    pub fn try_recv(&mut self) -> Option<IncomingSocketMessage> {
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.tcp_socket.try_recv()
@@ -50,32 +50,27 @@ impl QuadSocket {
             self.web_socket.try_recv()
         }
     }
+}
 
-    pub fn connected(&self) -> bool {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.tcp_socket.connected()
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.web_socket.connected()
+impl QuadSocket {
+    pub fn connect(addr: &'static str) -> QuadSocket {
+        QuadSocket {
+            #[cfg(not(target_arch = "wasm32"))]
+            tcp_socket: websocket::WebSocket::connect(addr),
+            #[cfg(target_arch = "wasm32")]
+            web_socket: websocket::WebSocket::connect(addr),
         }
     }
 }
 
-impl QuadSocket {
-    #[cfg(target_arch = "wasm32")]
-    pub fn is_wasm_websocket_connected(&self) -> bool {
-        self.web_socket.connected()
-    }
+pub enum OutgoingSocketMessage {
+    Close,
+    Send(Vec<u8>),
+}
 
-    pub fn connect(addr: &str) -> Result<QuadSocket, Error> {
-        Ok(QuadSocket {
-            #[cfg(not(target_arch = "wasm32"))]
-            tcp_socket: websocket::WebSocket::connect(addr)?,
-            #[cfg(target_arch = "wasm32")]
-            web_socket: websocket::WebSocket::connect(addr)?,
-        })
-    }
+pub enum IncomingSocketMessage {
+    Connected,
+    PacketReceived(Vec<u8>),
+    Error(Error),
+    Closed,
 }

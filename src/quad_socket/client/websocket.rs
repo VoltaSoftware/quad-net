@@ -1,57 +1,101 @@
 use crate::error::Error;
+use crate::quad_socket::client::{IncomingSocketMessage, OutgoingSocketMessage};
+use std::sync::mpsc::{Receiver, Sender};
 use tungstenite::{connect, Bytes, Message};
 
 pub struct WebSocket {
-    socket: tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
+    rx: Receiver<IncomingSocketMessage>,
+    tx: Sender<OutgoingSocketMessage>,
 }
 
 impl WebSocket {
-    pub fn send(&mut self, data: &[u8]) -> Result<(), std::io::Error> {
-        let tokio_bytes = Bytes::from(data.to_vec());
-        self.socket
-            .send(Message::Binary(tokio_bytes))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    pub fn send(&mut self, data: &[u8]) {
+        let _ = self.tx.send(OutgoingSocketMessage::Send(data.to_vec()));
     }
 
-    pub fn try_recv(&mut self) -> Option<Vec<u8>> {
-        if let Ok(msg) = self.socket.read() {
-            if let Message::Binary(data) = msg {
-                return Some(data.to_vec());
-            }
-        }
-        None
+    pub fn try_recv(&mut self) -> Option<IncomingSocketMessage> {
+        self.rx.try_recv().ok()
     }
 
-    pub fn close(&mut self) -> Result<(), std::io::Error> {
-        self.socket
-            .close(None)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-    }
-
-    pub fn connected(&self) -> bool {
-        self.socket.can_read() && self.socket.can_write()
+    pub fn close(&mut self) {
+        let _ = self.tx.send(OutgoingSocketMessage::Close);
     }
 }
 
 impl WebSocket {
-    pub fn connect(addr: &str) -> Result<WebSocket, Error> {
-        let socket = connect(addr);
-        if let Err(e) = socket {
-            return Err(Error::from(e));
-        }
+    pub fn connect(addr: &'static str) -> WebSocket {
+        let (incoming_sock_msg_tx, incoming_sock_msg_rx) = std::sync::mpsc::channel();
+        let (outgoing_sock_msg_tx, outgoing_sock_msg_rx) = std::sync::mpsc::channel();
 
-        let (mut socket, response) = socket.unwrap();
-
-        match socket.get_mut() {
-            tungstenite::stream::MaybeTlsStream::Plain(stream) => stream.set_nonblocking(true),
-            tungstenite::stream::MaybeTlsStream::Rustls(stream) => {
-                stream.get_mut().set_nonblocking(true)
+        std::thread::spawn(move || {
+            let socket = connect(addr);
+            if let Err(e) = socket {
+                incoming_sock_msg_tx
+                    .send(IncomingSocketMessage::Error(Error::from(e)))
+                    .expect("Socket tx closed");
+                return;
             }
-            e => unimplemented!("Unsupported stream type {:?}", e),
-        }?;
+
+            let (mut socket, response) = socket.unwrap();
+
+            match socket.get_mut() {
+                tungstenite::stream::MaybeTlsStream::Plain(stream) => stream.set_nonblocking(true),
+                tungstenite::stream::MaybeTlsStream::Rustls(stream) => {
+                    stream.get_mut().set_nonblocking(true)
+                }
+                e => unimplemented!("Unsupported stream type {:?}", e),
+            }
+            .expect("Failed to set nonblocking");
+
+            incoming_sock_msg_tx
+                .send(IncomingSocketMessage::Connected)
+                .unwrap();
+
+            'outer: loop {
+                while let Some(msg) = outgoing_sock_msg_rx.try_recv().ok() {
+                    match msg {
+                        OutgoingSocketMessage::Close => {
+                            let _ = incoming_sock_msg_tx.send(IncomingSocketMessage::Closed);
+
+                            let _ = socket
+                                .close(None)
+                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+                            break 'outer;
+                        }
+                        OutgoingSocketMessage::Send(data) => {
+                            let tokio_bytes = Bytes::from(data.to_vec());
+                            let result = socket
+                                .send(Message::Binary(tokio_bytes))
+                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+
+                            if let Err(e) = result {
+                                let _ = incoming_sock_msg_tx
+                                    .send(IncomingSocketMessage::Error(Error::from(e)));
+                            }
+                        }
+                    }
+                }
+
+                if let Ok(msg) = socket.read() {
+                    if let Message::Binary(data) = msg {
+                        incoming_sock_msg_tx
+                            .send(IncomingSocketMessage::PacketReceived(data.to_vec()))
+                            .unwrap();
+                    }
+                }
+
+                if !socket.can_read() || !socket.can_write() {
+                    let _ = incoming_sock_msg_tx.send(IncomingSocketMessage::Closed);
+                    break 'outer;
+                }
+            }
+        });
 
         //socket.get_mut().set_nodelay(true).map_err(|e| Error::from(e))?;
 
-        Ok(WebSocket { socket })
+        WebSocket {
+            rx: incoming_sock_msg_rx,
+            tx: outgoing_sock_msg_tx,
+        }
     }
 }

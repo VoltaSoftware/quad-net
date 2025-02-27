@@ -2,71 +2,61 @@
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod js_web_socket {
-    use std::net::{SocketAddr, ToSocketAddrs};
-
-    use sapp_jsutils::JsObject;
-
     use crate::error::Error;
+    use crate::quad_socket::client::IncomingSocketMessage;
+    use sapp_jsutils::JsObject;
 
     pub struct WebSocket;
 
+    const CONNECTED: u32 = 0;
+    const PACKED_RECEIVED: u32 = 1;
+    const SOCKET_ERROR: u32 = 2;
+    const CLOSED: u32 = 3;
+
     extern "C" {
         fn ws_connect(addr: JsObject);
-        fn ws_send(buffer: JsObject) -> JsObject;
+        fn ws_send(buffer: JsObject);
         fn ws_close();
         fn ws_try_recv() -> JsObject;
-        fn ws_is_connected() -> i32;
     }
 
     impl WebSocket {
-        pub fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
-            let error_obj: JsObject = unsafe { ws_send(JsObject::buffer(data)) };
-
-            if error_obj.is_undefined() {
-                Ok(())
-            } else {
-                let mut error_message = String::new();
-                error_obj.to_string(&mut error_message);
-
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    error_message,
-                ))
-            }
+        pub fn send_bytes(&self, data: &[u8]) {
+            unsafe { ws_send(JsObject::buffer(data)) };
         }
 
-        pub fn try_recv(&mut self) -> Option<Vec<u8>> {
+        pub fn try_recv(&mut self) -> Option<IncomingSocketMessage> {
             let data = unsafe { ws_try_recv() };
             if data.is_nil() == false {
-                let is_text = data.field_u32("text") == 1;
-                let mut buf = vec![];
-                if is_text {
-                    let mut s = String::new();
-                    data.field("data").to_string(&mut s);
-                    buf = s.into_bytes();
-                } else {
-                    data.field("data").to_byte_buffer(&mut buf);
-                }
-                return Some(buf);
+                let type_id = data.field_u32("type");
+                return match type_id {
+                    CONNECTED => Some(IncomingSocketMessage::Connected),
+                    PACKED_RECEIVED => {
+                        let mut buf = vec![];
+                        data.field("data").to_byte_buffer(&mut buf);
+                        Some(IncomingSocketMessage::PacketReceived(buf))
+                    }
+                    SOCKET_ERROR => {
+                        let mut json_error = String::new();
+                        data.field("data").to_string(&mut json_error);
+                        Some(IncomingSocketMessage::Error(Error::from(
+                            std::io::Error::new(std::io::ErrorKind::Other, json_error),
+                        )))
+                    }
+                    CLOSED => Some(IncomingSocketMessage::Closed),
+                    _ => None,
+                };
             }
             None
         }
 
-        pub fn connected(&self) -> bool {
-            unsafe { ws_is_connected() == 1 }
-        }
-
-        pub fn connect(addr: &str) -> Result<WebSocket, Error> {
+        pub fn connect(addr: &str) -> WebSocket {
             unsafe { ws_connect(JsObject::string(&format!("{}", addr))) };
-
-            Ok(WebSocket)
+            WebSocket
         }
 
-        pub fn close(&self) -> Result<(), std::io::Error> {
-            unsafe {
-                ws_close();
-            }
-            Ok(()) // TODO can websockets fail to close?
+        pub fn close(&self) {
+            unsafe { ws_close() };
         }
     }
 }

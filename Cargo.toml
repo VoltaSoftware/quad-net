@@ -9,6 +9,7 @@ description = "Miniquad friendly network abstractions"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ureq = "2.0"
 tungstenite = {  version = "0.26.2", features = ["rustls-tls-webpki-roots"] }
+log = "0.4.26"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 sapp-jsutils = "0.1"

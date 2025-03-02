@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::quad_socket::client::{IncomingSocketMessage, OutgoingSocketMessage};
+use log::error;
 use std::sync::mpsc::{Receiver, Sender};
 use tungstenite::{connect, Bytes, Message};
 
@@ -78,9 +79,12 @@ impl WebSocket {
 
                 if let Ok(msg) = socket.read() {
                     if let Message::Binary(data) = msg {
-                        incoming_sock_msg_tx
+                        if let Err(err) = incoming_sock_msg_tx
                             .send(IncomingSocketMessage::PacketReceived(data.to_vec()))
-                            .unwrap();
+                        {
+                            error!("Failed to send incoming message: {:?}", err);
+                            break;
+                        }
                     }
                 }
 

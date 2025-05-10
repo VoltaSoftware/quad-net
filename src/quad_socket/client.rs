@@ -53,7 +53,7 @@ impl QuadSocket {
 }
 
 impl QuadSocket {
-    pub fn connect(addr: &'static str) -> QuadSocket {
+    pub fn connect(addr: impl Into<String>) -> QuadSocket {
         QuadSocket {
             #[cfg(not(target_arch = "wasm32"))]
             tcp_socket: websocket::WebSocket::connect(addr),

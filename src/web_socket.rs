@@ -50,7 +50,7 @@ pub(crate) mod js_web_socket {
             None
         }
 
-        pub fn connect(addr: &str) -> WebSocket {
+        pub fn connect(addr: impl Into<String>) -> WebSocket {
             unsafe { ws_connect(JsObject::string(&format!("{}", addr))) };
             WebSocket
         }

@@ -25,10 +25,11 @@ impl WebSocket {
 }
 
 impl WebSocket {
-    pub fn connect(addr: &'static str) -> WebSocket {
+    pub fn connect(addr: impl Into<String>) -> WebSocket {
         let (incoming_sock_msg_tx, incoming_sock_msg_rx) = std::sync::mpsc::channel();
         let (outgoing_sock_msg_tx, outgoing_sock_msg_rx) = std::sync::mpsc::channel();
 
+        let addr = addr.into();
         std::thread::spawn(move || {
             let socket = connect(addr);
             if let Err(e) = socket {

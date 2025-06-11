@@ -53,10 +53,10 @@ impl QuadSocket {
 }
 
 impl QuadSocket {
-    pub fn connect(addr: impl Into<String>) -> QuadSocket {
+    pub fn connect(addr: impl Into<String>, disable_cert_verification: bool) -> QuadSocket {
         QuadSocket {
             #[cfg(not(target_arch = "wasm32"))]
-            tcp_socket: websocket::WebSocket::connect(addr),
+            tcp_socket: websocket::WebSocket::connect(addr, disable_cert_verification),
             #[cfg(target_arch = "wasm32")]
             web_socket: websocket::WebSocket::connect(addr),
         }

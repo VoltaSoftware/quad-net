@@ -2,6 +2,7 @@
 
 #[cfg(target_arch = "wasm32")]
 use sapp_jsutils::JsObject;
+use std::io::Read;
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Method {
@@ -139,10 +140,7 @@ impl RequestBuilder {
     }
 
     pub fn response_type(self, response_type: RequestResponseType) -> RequestBuilder {
-        RequestBuilder {
-            response_type,
-            ..self
-        }
+        RequestBuilder { response_type, ..self }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -152,31 +150,55 @@ impl RequestBuilder {
         let (tx, rx) = channel();
 
         std::thread::spawn(move || {
-            let method = match self.method {
-                Method::Post => ureq::post,
-                Method::Put => ureq::put,
-                Method::Get => ureq::get,
-                Method::Delete => ureq::delete,
-            };
+            let response: Result<ResponsePayload, HttpError> = match self.method {
+                // Methods that can have a body
+                Method::Post | Method::Put => {
+                    let mut request = match self.method {
+                        Method::Post => ureq::post(&self.url),
+                        Method::Put => ureq::put(&self.url),
+                        _ => unreachable!(),
+                    };
 
-            let mut request = method(&self.url);
-            for (header, value) in self.headers {
-                request = request.set(&header, &value)
-            }
-            let response: Result<ResponsePayload, HttpError> = if let Some(body) = self.body {
-                request.send_string(&body)
-            } else {
-                request.call()
+                    // Set headers
+                    for (header, value) in &self.headers {
+                        request = request.header(header, value);
+                    }
+
+                    // Send with or without body
+                    let response = if let Some(body) = &self.body {
+                        request.send(body)
+                    } else {
+                        request.send_empty()
+                    };
+
+                    response
+                }
+                // Methods that cannot have a body
+                Method::Get | Method::Delete => {
+                    let mut request = match self.method {
+                        Method::Get => ureq::get(&self.url),
+                        Method::Delete => ureq::delete(&self.url),
+                        _ => unreachable!(),
+                    };
+
+                    // Set headers
+                    for (header, value) in &self.headers {
+                        request = request.header(header, value);
+                    }
+
+                    request.call()
+                }
             }
             .map_err(|err| err.into())
-            .and_then(|response| match self.response_type {
+            .and_then(|mut response| match self.response_type {
                 RequestResponseType::Text => response
-                    .into_string()
+                    .body_mut()
+                    .read_to_string()
                     .map(|s| ResponsePayload::Text(s))
                     .map_err(|err| err.into()),
                 RequestResponseType::Bytes => {
                     let mut bytes = Vec::new();
-                    match response.into_reader().read_to_end(&mut bytes) {
+                    match response.into_body().into_reader().read_to_end(&mut bytes) {
                         Ok(_) => Ok(ResponsePayload::Bytes(bytes)),
                         Err(err) => Err(err.into()),
                     }

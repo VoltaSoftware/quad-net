@@ -1,9 +1,14 @@
 use crate::error::Error;
 use crate::quad_socket::client::{IncomingSocketMessage, OutgoingSocketMessage};
 use log::error;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{DigitallySignedStruct, SignatureScheme};
+use std::net::TcpStream;
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 use std::time::Duration;
-use tungstenite::{connect, Bytes, Message};
+use tungstenite::{connect, Bytes, Connector, Message};
 
 pub struct WebSocket {
     rx: Receiver<IncomingSocketMessage>,
@@ -25,13 +30,37 @@ impl WebSocket {
 }
 
 impl WebSocket {
-    pub fn connect(addr: impl Into<String>) -> WebSocket {
+    pub fn connect(addr: impl Into<String>, disable_cert_verification: bool) -> WebSocket {
         let (incoming_sock_msg_tx, incoming_sock_msg_rx) = std::sync::mpsc::channel();
         let (outgoing_sock_msg_tx, outgoing_sock_msg_rx) = std::sync::mpsc::channel();
 
         let addr = addr.into();
         std::thread::spawn(move || {
-            let socket = connect(addr);
+            // Create a connector that disables certificate verification if requested
+            let socket = if disable_cert_verification {
+                // Create a connector with certificate verification disabled
+                let config = rustls::ClientConfig::builder()
+                    .dangerous()
+                    .with_custom_certificate_verifier(Arc::new(NoCertificateVerification {}))
+                    .with_no_client_auth();
+
+                let connector = Connector::Rustls(Arc::new(config));
+
+                let ip_port = addr
+                    .strip_prefix("wss://")
+                    .expect("Address must start with 'wss://'");
+
+                let stream = TcpStream::connect(ip_port).unwrap();
+                let client =
+                    tungstenite::client_tls_with_config(addr, stream, None, Some(connector))
+                        .expect("Should not have handshake issue with disabled cert verification");
+
+                Ok(client)
+            } else {
+                // Use standard connect with certificate verification
+                connect(addr)
+            };
+
             if let Err(e) = socket {
                 incoming_sock_msg_tx
                     .send(IncomingSocketMessage::Error(Error::from(e)))
@@ -106,5 +135,60 @@ impl WebSocket {
             rx: incoming_sock_msg_rx,
             tx: outgoing_sock_msg_tx,
         }
+    }
+}
+
+// Add this struct for rustls certificate verification disabling
+#[derive(Debug)]
+struct NoCertificateVerification;
+
+impl rustls::client::danger::ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        // For this example, we will skip all verification
+        // In a real application, you should implement proper certificate verification
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        // For TLS 1.2, we can skip the verification
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        // For TLS 1.3, we can skip the verification
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+            SignatureScheme::ED25519,
+            SignatureScheme::ED448,
+        ]
     }
 }

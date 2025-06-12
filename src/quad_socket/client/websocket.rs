@@ -50,12 +50,19 @@ impl WebSocket {
                     .strip_prefix("wss://")
                     .expect("Address must start with 'wss://'");
 
-                let stream = TcpStream::connect(ip_port).unwrap();
-                let client =
-                    tungstenite::client_tls_with_config(addr, stream, None, Some(connector))
-                        .expect("Should not have handshake issue with disabled cert verification");
+                let stream = TcpStream::connect(ip_port);
+                if let Err(e) = stream {
+                    Err(tungstenite::Error::Io(e))
+                } else {
+                    let stream = stream.unwrap();
+                    let client =
+                        tungstenite::client_tls_with_config(addr, stream, None, Some(connector))
+                            .expect(
+                                "Should not have handshake issue with disabled cert verification",
+                            );
 
-                Ok(client)
+                    Ok(client)
+                }
             } else {
                 // Use standard connect with certificate verification
                 connect(addr)

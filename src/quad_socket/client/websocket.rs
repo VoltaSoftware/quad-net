@@ -4,10 +4,12 @@ use log::error;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
+use std::io::ErrorKind;
 use std::net::TcpStream;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
+use tungstenite::HandshakeError::{Failure, Interrupted};
 use tungstenite::{connect, Bytes, Connector, Message};
 
 pub struct WebSocket {
@@ -50,18 +52,27 @@ impl WebSocket {
                     .strip_prefix("wss://")
                     .expect("Address must start with 'wss://'");
 
-                let stream = TcpStream::connect(ip_port);
-                if let Err(e) = stream {
-                    Err(tungstenite::Error::Io(e))
-                } else {
-                    let stream = stream.unwrap();
-                    let client =
-                        tungstenite::client_tls_with_config(addr, stream, None, Some(connector))
-                            .expect(
-                                "Should not have handshake issue with disabled cert verification",
-                            );
+                match TcpStream::connect(ip_port) {
+                    Ok(stream) => {
+                        let client = tungstenite::client_tls_with_config(
+                            addr,
+                            stream,
+                            None,
+                            Some(connector),
+                        );
 
-                    Ok(client)
+                        match client {
+                            Ok(client) => Ok(client),
+                            Err(e) => match e {
+                                Interrupted(_) => Err(tungstenite::Error::Io(std::io::Error::new(
+                                    ErrorKind::ConnectionAborted,
+                                    "TlsHandshake interrupted: ".to_string(),
+                                ))),
+                                Failure(error) => Err(error),
+                            },
+                        }
+                    }
+                    Err(e) => Err(tungstenite::Error::Io(e)),
                 }
             } else {
                 // Use standard connect with certificate verification

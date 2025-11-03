@@ -1,5 +1,3 @@
-use std::net::ToSocketAddrs;
-
 #[cfg(not(target_arch = "wasm32"))]
 mod websocket;
 #[cfg(target_arch = "wasm32")]

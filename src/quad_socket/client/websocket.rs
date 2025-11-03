@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
 use tungstenite::HandshakeError::{Failure, Interrupted};
-use tungstenite::{connect, Bytes, Connector, Message};
+use tungstenite::{connect, Connector, Message};
 
 pub struct WebSocket {
     rx: Receiver<IncomingSocketMessage>,
@@ -89,13 +89,16 @@ impl WebSocket {
             let (mut websocket_out, response) = socket.unwrap();
 
             match websocket_out.get_mut() {
-                tungstenite::stream::MaybeTlsStream::Plain(stream) => stream.set_nonblocking(true),
+                tungstenite::stream::MaybeTlsStream::Plain(stream) => {
+                    let _ = stream.set_nonblocking(true);
+                    let _ = stream.set_nodelay(true);
+                }
                 tungstenite::stream::MaybeTlsStream::Rustls(stream) => {
-                    stream.get_mut().set_nonblocking(true)
+                    let _ = stream.get_mut().set_nonblocking(true);
+                    let _ = stream.get_mut().set_nodelay(true);
                 }
                 e => unimplemented!("Unsupported stream type {:?}", e),
-            }
-            .expect("Failed to set nonblocking");
+            };
 
             incoming_sock_msg_tx
                 .send(IncomingSocketMessage::Connected)
@@ -160,14 +163,14 @@ impl WebSocket {
 #[derive(Debug)]
 struct NoCertificateVerification;
 
-impl rustls::client::danger::ServerCertVerifier for NoCertificateVerification {
+impl ServerCertVerifier for NoCertificateVerification {
     fn verify_server_cert(
         &self,
-        end_entity: &CertificateDer<'_>,
-        intermediates: &[CertificateDer<'_>],
-        server_name: &ServerName<'_>,
-        ocsp_response: &[u8],
-        now: UnixTime,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
         // For this example, we will skip all verification
         // In a real application, you should implement proper certificate verification
@@ -176,9 +179,9 @@ impl rustls::client::danger::ServerCertVerifier for NoCertificateVerification {
 
     fn verify_tls12_signature(
         &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
         // For TLS 1.2, we can skip the verification
         Ok(HandshakeSignatureValid::assertion())
@@ -186,9 +189,9 @@ impl rustls::client::danger::ServerCertVerifier for NoCertificateVerification {
 
     fn verify_tls13_signature(
         &self,
-        message: &[u8],
-        cert: &CertificateDer<'_>,
-        dss: &DigitallySignedStruct,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
         // For TLS 1.3, we can skip the verification
         Ok(HandshakeSignatureValid::assertion())

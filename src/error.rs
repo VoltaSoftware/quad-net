@@ -1,13 +1,13 @@
 #[derive(Debug)]
 pub enum Error {
     #[cfg(not(target_arch = "wasm32"))]
-    TungsteniteError(tungstenite::error::Error),
+    TungsteniteError(tokio_tungstenite::tungstenite::error::Error),
     IOError(std::io::Error),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<tungstenite::error::Error> for Error {
-    fn from(error: tungstenite::error::Error) -> Error {
+impl From<tokio_tungstenite::tungstenite::error::Error> for Error {
+    fn from(error: tokio_tungstenite::tungstenite::error::Error) -> Error {
         Error::TungsteniteError(error)
     }
 }

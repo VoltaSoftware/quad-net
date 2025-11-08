@@ -34,7 +34,7 @@ pub(crate) mod js_web_socket {
                     PACKED_RECEIVED => {
                         let mut buf = vec![];
                         data.field("data").to_byte_buffer(&mut buf);
-                        Some(IncomingSocketMessage::PacketReceived(buf))
+                        Some(IncomingSocketMessage::PacketReceived(buf, 0))
                     }
                     SOCKET_ERROR => {
                         let mut json_error = String::new();

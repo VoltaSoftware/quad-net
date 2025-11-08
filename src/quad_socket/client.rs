@@ -68,7 +68,7 @@ pub enum OutgoingSocketMessage {
 
 pub enum IncomingSocketMessage {
     Connected,
-    PacketReceived(Vec<u8>),
+    PacketReceived(Vec<u8>, u64),
     Error(Error),
     Closed,
 }

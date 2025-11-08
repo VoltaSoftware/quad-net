@@ -6,15 +6,14 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use std::io::ErrorKind;
 use std::net::TcpStream;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tungstenite::HandshakeError::{Failure, Interrupted};
 use tungstenite::{connect, Connector, Message};
 
 pub struct WebSocket {
-    rx: Receiver<IncomingSocketMessage>,
-    tx: Sender<OutgoingSocketMessage>,
+    rx: crossbeam_channel::Receiver<IncomingSocketMessage>,
+    tx: crossbeam_channel::Sender<OutgoingSocketMessage>,
 }
 
 impl WebSocket {
@@ -33,10 +32,16 @@ impl WebSocket {
 
 impl WebSocket {
     pub fn connect(addr: impl Into<String>, disable_cert_verification: bool) -> WebSocket {
-        let (incoming_sock_msg_tx, incoming_sock_msg_rx) = std::sync::mpsc::channel();
-        let (outgoing_sock_msg_tx, outgoing_sock_msg_rx) = std::sync::mpsc::channel();
+        let (incoming_sock_msg_tx, incoming_sock_msg_rx) = crossbeam_channel::unbounded();
+        let (outgoing_sock_msg_tx, outgoing_sock_msg_rx) = crossbeam_channel::unbounded();
 
         let addr = addr.into();
+        // Make new tokio runbtime on new thread
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
         std::thread::spawn(move || {
             // Create a connector that disables certificate verification if requested
             let socket = if disable_cert_verification {
@@ -130,8 +135,9 @@ impl WebSocket {
 
                 if let Ok(msg) = websocket_out.read() {
                     if let Message::Binary(data) = msg {
+                        let read_at = current_time_millis();
                         if let Err(err) = incoming_sock_msg_tx
-                            .send(IncomingSocketMessage::PacketReceived(data.into()))
+                            .send(IncomingSocketMessage::PacketReceived(data.into(), read_at))
                         {
                             error!("Failed to send incoming message: {:?}", err);
                             break;
@@ -140,7 +146,7 @@ impl WebSocket {
                 } else {
                     let fps = 30;
                     let frame_time = Duration::from_millis(1000 / fps);
-                    std::thread::sleep(frame_time);
+                    //std::thread::sleep(frame_time);
                 }
 
                 if !websocket_out.can_read() || !websocket_out.can_write() {
@@ -212,4 +218,11 @@ impl ServerCertVerifier for NoCertificateVerification {
             SignatureScheme::ED448,
         ]
     }
+}
+
+pub fn current_time_millis() -> u64 {
+    let duration_since_epoch = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap();
+    duration_since_epoch.as_millis() as u64
 }

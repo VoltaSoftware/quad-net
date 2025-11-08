@@ -11,8 +11,10 @@ ureq = { version = "3.0.11", default-features = false, features = ["rustls"] }
 tungstenite = {  version = "0.28.0", default-features = false, features = ["rustls-tls-webpki-roots", "handshake"] }
 log = "0.4.26"
 rustls = { version = "0.23.27", default-features = false }
+tokio = { version = "1.48.0", default-features = false, features = ["full"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 sapp-jsutils = "0.1"
 
 [dependencies]
+crossbeam-channel = "0.5.15"

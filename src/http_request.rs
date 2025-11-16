@@ -76,7 +76,9 @@ impl Request {
 
             let payload = match self.response_type {
                 RequestResponseType::Text => {
-                    let res = std::str::from_utf8(&buf).unwrap().to_owned();
+                    let res = std::str::from_utf8(&buf)
+                        .unwrap_or("failed_to_decode")
+                        .to_owned();
                     ResponsePayload::Text(res)
                 }
                 RequestResponseType::Bytes => ResponsePayload::Bytes(buf),
@@ -140,7 +142,10 @@ impl RequestBuilder {
     }
 
     pub fn response_type(self, response_type: RequestResponseType) -> RequestBuilder {
-        RequestBuilder { response_type, ..self }
+        RequestBuilder {
+            response_type,
+            ..self
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -205,7 +210,10 @@ impl RequestBuilder {
                 }
             });
 
-            tx.send(response).unwrap();
+            let result = tx.send(response);
+            if let Err(e) = result {
+                log::error!("Http request receiver dropped {:?}", e);
+            }
         });
         Request { rx }
     }

@@ -2,9 +2,9 @@
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod js_web_socket {
+    use crate::JsObject;
     use crate::error::Error;
     use crate::quad_socket::client::IncomingSocketMessage;
-    use sapp_jsutils::JsObject;
 
     pub struct WebSocket;
 
@@ -13,7 +13,8 @@ pub(crate) mod js_web_socket {
     const SOCKET_ERROR: u32 = 2;
     const CLOSED: u32 = 3;
 
-    extern "C" {
+    #[link(wasm_import_module = "env")]
+    unsafe extern "C" {
         fn ws_connect(addr: JsObject);
         fn ws_send(buffer: JsObject);
         fn ws_close();

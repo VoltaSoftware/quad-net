@@ -23,7 +23,7 @@ impl From<Error> for std::io::Error {
         match error {
             Error::IOError(error) => error,
             #[cfg(not(target_arch = "wasm32"))]
-            Error::TungsteniteError(e) => std::io::Error::new(std::io::ErrorKind::Other, e),
+            Error::TungsteniteError(e) => std::io::Error::other(e),
         }
     }
 }

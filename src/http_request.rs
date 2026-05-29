@@ -1,7 +1,7 @@
 //! Async http requests.
 
 #[cfg(target_arch = "wasm32")]
-use sapp_jsutils::JsObject;
+use crate::JsObject;
 use std::io::Read;
 
 #[derive(Debug, Clone, PartialEq, Copy)]
@@ -42,7 +42,8 @@ impl From<ureq::Error> for HttpError {
 }
 
 #[cfg(target_arch = "wasm32")]
-extern "C" {
+#[link(wasm_import_module = "env")]
+unsafe extern "C" {
     fn http_make_request(scheme: i32, url: JsObject, body: JsObject, headers: JsObject) -> i32;
     fn http_try_recv(cid: i32) -> JsObject;
 }
@@ -170,13 +171,12 @@ impl RequestBuilder {
                     }
 
                     // Send with or without body
-                    let response = if let Some(body) = &self.body {
+
+                    if let Some(body) = &self.body {
                         request.send(body)
                     } else {
                         request.send_empty()
-                    };
-
-                    response
+                    }
                 }
                 // Methods that cannot have a body
                 Method::Get | Method::Delete => {
@@ -199,7 +199,7 @@ impl RequestBuilder {
                 RequestResponseType::Text => response
                     .body_mut()
                     .read_to_string()
-                    .map(|s| ResponsePayload::Text(s))
+                    .map(ResponsePayload::Text)
                     .map_err(|err| err.into()),
                 RequestResponseType::Bytes => {
                     let mut bytes = Vec::new();

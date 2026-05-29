@@ -5,14 +5,12 @@ use log::error;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
-use std::io::ErrorKind;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{connect_async, connect_async_tls_with_config, Connector};
-use ureq::run;
+use tokio_tungstenite::{Connector, connect_async, connect_async_tls_with_config};
 
 pub struct WebSocket {
     _runtime: Runtime, // Need this here to keep it alive for the duration of the socket otherwise it kills all tasks
@@ -36,8 +34,8 @@ impl WebSocket {
 
 impl WebSocket {
     pub fn connect(addr: impl Into<String>, disable_cert_verification: bool) -> WebSocket {
-        let (mut incoming_sock_msg_tx, mut incoming_sock_msg_rx) = unbounded_channel();
-        let (mut outgoing_sock_msg_tx, mut outgoing_sock_msg_rx) = unbounded_channel();
+        let (incoming_sock_msg_tx, incoming_sock_msg_rx) = unbounded_channel();
+        let (outgoing_sock_msg_tx, mut outgoing_sock_msg_rx) = unbounded_channel();
 
         let addr = addr.into();
         // Make new tokio runbtime on new thread
@@ -71,7 +69,7 @@ impl WebSocket {
                 return;
             }
 
-            let (mut websocket_out, response) = socket.unwrap();
+            let (mut websocket_out, _response) = socket.unwrap();
 
             match websocket_out.get_mut() {
                 tokio_tungstenite::MaybeTlsStream::Plain(stream) => {
@@ -109,7 +107,7 @@ impl WebSocket {
                         Ok(_) => {}
                         Err(e) => {
                             let _ = incoming_sock_msg_tx_clone.send(IncomingSocketMessage::Error(
-                                Error::from(std::io::Error::new(ErrorKind::Other, e)),
+                                Error::from(std::io::Error::other(e)),
                             ));
                             break;
                         }
@@ -128,14 +126,14 @@ impl WebSocket {
                             let _ = write_half
                                 .send(Message::Close(None))
                                 .await
-                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+                                .map_err(std::io::Error::other);
                             break;
                         }
                         OutgoingSocketMessage::Send(data) => {
                             let result = write_half
                                 .send(Message::Binary(data.into()))
                                 .await
-                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+                                .map_err(std::io::Error::other);
 
                             if let Err(e) = result {
                                 let _ = incoming_sock_msg_tx

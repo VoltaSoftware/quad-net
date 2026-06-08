@@ -9,7 +9,7 @@ description = "Miniquad friendly network abstractions"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ureq = { version = "3.3.0", default-features = false, features = ["rustls"] }
 tokio-tungstenite  = {  version = "0.29.0", default-features = false, features = ["rustls-tls-webpki-roots", "handshake", "connect"] }
-log = "0.4.30"
+log = "0.4.32"
 rustls = { version = "0.23.40", default-features = false }
 tokio = { version = "1.52.3", default-features = false, features = ["rt-multi-thread", "time", "net", "sync", "macros"] }
 futures = { version = "0.3.32", default-features = false }

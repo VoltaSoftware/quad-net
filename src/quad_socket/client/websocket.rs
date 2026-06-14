@@ -5,12 +5,21 @@ use log::error;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::SystemTime;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{Connector, connect_async, connect_async_tls_with_config};
+
+fn send_closed_once(tx: &UnboundedSender<IncomingSocketMessage>, closed: &AtomicBool) {
+    if !closed.swap(true, Ordering::AcqRel) {
+        let _ = tx.send(IncomingSocketMessage::Closed);
+    }
+}
 
 pub struct WebSocket {
     _runtime: Runtime, // Need this here to keep it alive for the duration of the socket otherwise it kills all tasks
@@ -36,6 +45,7 @@ impl WebSocket {
     pub fn connect(addr: impl Into<String>, disable_cert_verification: bool) -> WebSocket {
         let (incoming_sock_msg_tx, incoming_sock_msg_rx) = unbounded_channel();
         let (outgoing_sock_msg_tx, mut outgoing_sock_msg_rx) = unbounded_channel();
+        let closed = Arc::new(AtomicBool::new(false));
 
         let addr = addr.into();
         // Make new tokio runbtime on new thread
@@ -91,6 +101,7 @@ impl WebSocket {
 
             // Read half
             let incoming_sock_msg_tx_clone = incoming_sock_msg_tx.clone();
+            let read_closed = closed.clone();
             tokio::spawn(async move {
                 let mut read_half = read_half;
                 while let Some(msg) = read_half.next().await {
@@ -104,6 +115,9 @@ impl WebSocket {
                                 break;
                             }
                         }
+                        Ok(Message::Close(_)) => {
+                            break;
+                        }
                         Ok(_) => {}
                         Err(e) => {
                             let _ = incoming_sock_msg_tx_clone.send(IncomingSocketMessage::Error(
@@ -113,16 +127,18 @@ impl WebSocket {
                         }
                     }
                 }
+                send_closed_once(&incoming_sock_msg_tx_clone, &read_closed);
             });
 
             // Write half
             let incoming_sock_msg_tx = incoming_sock_msg_tx.clone();
+            let write_closed = closed.clone();
             tokio::spawn(async move {
                 let mut write_half = write_half;
                 while let Some(msg) = outgoing_sock_msg_rx.recv().await {
                     match msg {
                         OutgoingSocketMessage::Close => {
-                            let _ = incoming_sock_msg_tx.send(IncomingSocketMessage::Closed);
+                            send_closed_once(&incoming_sock_msg_tx, &write_closed);
                             let _ = write_half
                                 .send(Message::Close(None))
                                 .await
